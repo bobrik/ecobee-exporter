@@ -4,6 +4,7 @@ package collector
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -29,7 +30,7 @@ type eCollector struct {
 	actualTemperature, targetTemperatureMin, targetTemperatureMax *prometheus.Desc
 
 	// sensor descriptors
-	temperature, humidity, occupancy, inUse, currentHvacMode *prometheus.Desc
+	temperature, humidity, occupancy, inUse, currentHvacMode, fanStatus *prometheus.Desc
 }
 
 // NewEcobeeCollector returns a new eCollector with the given prefix assigned to all
@@ -95,6 +96,11 @@ func NewEcobeeCollector(c *ecobee.Client, metricPrefix string) *eCollector {
 			"current hvac mode of thermostat",
 			[]string{"thermostat_id", "thermostat_name", "current_hvac_mode"},
 		),
+		fanStatus: d.new(
+			"fan_status",
+			"current status of the fan",
+			[]string{"thermostat_id", "thermostat_name"},
+		),
 	}
 }
 
@@ -109,6 +115,7 @@ func (c *eCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.occupancy
 	ch <- c.inUse
 	ch <- c.currentHvacMode
+	ch <- c.fanStatus
 }
 
 // Collect retrieves thermostat data via the ecobee API.
@@ -120,11 +127,33 @@ func (c *eCollector) Collect(ch chan<- prometheus.Metric) {
 		IncludeRuntime:  true,
 		IncludeSettings: true,
 	})
-	elapsed := time.Now().Sub(start)
-	ch <- prometheus.MustNewConstMetric(c.fetchTime, prometheus.GaugeValue, elapsed.Seconds())
 	if err != nil {
 		log.Error(err)
 		return
+	}
+	ids := make([]string, len(tt))
+	for i, t := range tt {
+		ids[i] = t.Identifier
+	}
+	ts, err := c.client.GetThermostatSummary(ecobee.Selection{
+		SelectionType:          "thermostats",
+		SelectionMatch:         strings.Join(ids, ","),
+		IncludeEquipmentStatus: true,
+	})
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	elapsed := time.Now().Sub(start)
+	ch <- prometheus.MustNewConstMetric(c.fetchTime, prometheus.GaugeValue, elapsed.Seconds())
+	for _, t := range ts {
+		fanStatus := 0.0
+		if t.EquipmentStatus.Fan {
+			fanStatus = 1.0
+		}
+		ch <- prometheus.MustNewConstMetric(
+			c.fanStatus, prometheus.GaugeValue, fanStatus, t.Identifier, t.Name,
+		)
 	}
 	for _, t := range tt {
 		tFields := []string{t.Identifier, t.Name}
