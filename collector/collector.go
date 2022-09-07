@@ -30,7 +30,7 @@ type eCollector struct {
 	actualTemperature, targetTemperatureMin, targetTemperatureMax *prometheus.Desc
 
 	// sensor descriptors
-	temperature, humidity, occupancy, inUse, currentHvacMode, fanStatus *prometheus.Desc
+	temperature, humidity, occupancy, inUse, currentHvacMode, fanStatus, mode *prometheus.Desc
 }
 
 // NewEcobeeCollector returns a new eCollector with the given prefix assigned to all
@@ -101,6 +101,11 @@ func NewEcobeeCollector(c *ecobee.Client, metricPrefix string) *eCollector {
 			"current status of the fan",
 			[]string{"thermostat_id", "thermostat_name"},
 		),
+		mode: d.new(
+			"mode",
+			"current operating mode",
+			[]string{"thermostat_id", "thermostat_name", "mode"},
+		),
 	}
 }
 
@@ -116,6 +121,7 @@ func (c *eCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.inUse
 	ch <- c.currentHvacMode
 	ch <- c.fanStatus
+	ch <- c.mode
 }
 
 // Collect retrieves thermostat data via the ecobee API.
@@ -148,11 +154,25 @@ func (c *eCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.fetchTime, prometheus.GaugeValue, elapsed.Seconds())
 	for _, t := range ts {
 		fanStatus := 0.0
+		coolStatus := 0.0
+		heatStatus := 0.0
 		if t.EquipmentStatus.Fan {
 			fanStatus = 1.0
 		}
+		if t.EquipmentStatus.CompCool1 {
+			coolStatus = 1.0
+		}
+		if t.EquipmentStatus.HeatPump {
+			heatStatus = 1.0
+		}
 		ch <- prometheus.MustNewConstMetric(
 			c.fanStatus, prometheus.GaugeValue, fanStatus, t.Identifier, t.Name,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.mode, prometheus.GaugeValue, coolStatus, t.Identifier, t.Name, "cool",
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.mode, prometheus.GaugeValue, heatStatus, t.Identifier, t.Name, "heat",
 		)
 	}
 	for _, t := range tt {
