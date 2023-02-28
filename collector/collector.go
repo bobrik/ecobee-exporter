@@ -154,16 +154,20 @@ func (c *eCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.fetchTime, prometheus.GaugeValue, elapsed.Seconds())
 	for _, t := range ts {
 		fanStatus := 0.0
-		coolStatus := 0.0
-		heatStatus := 0.0
 		if t.EquipmentStatus.Fan {
 			fanStatus = 1.0
 		}
+		coolStatus := 0.0
 		if t.EquipmentStatus.CompCool1 {
 			coolStatus = 1.0
 		}
+		heatStatus := 0.0
 		if t.EquipmentStatus.HeatPump {
 			heatStatus = 1.0
+		}
+		auxStatus := 0.0
+		if t.EquipmentStatus.AuxHeat1 {
+			auxStatus = 1.0
 		}
 		ch <- prometheus.MustNewConstMetric(
 			c.fanStatus, prometheus.GaugeValue, fanStatus, t.Identifier, t.Name,
@@ -173,6 +177,9 @@ func (c *eCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.mode, prometheus.GaugeValue, heatStatus, t.Identifier, t.Name, "heat",
+		)
+		ch <- prometheus.MustNewConstMetric(
+			c.mode, prometheus.GaugeValue, auxStatus, t.Identifier, t.Name, "aux",
 		)
 	}
 	for _, t := range tt {
