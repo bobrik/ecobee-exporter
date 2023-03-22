@@ -33,7 +33,7 @@ type eCollector struct {
 	temperature, humidity, occupancy, inUse, currentHvacMode, fanStatus, mode *prometheus.Desc
 
 	// weather descriptors
-	weatherTemperature *prometheus.Desc
+	weatherTemperature, weatherAtmosphericPressure *prometheus.Desc
 }
 
 // NewEcobeeCollector returns a new eCollector with the given prefix assigned to all
@@ -114,6 +114,12 @@ func NewEcobeeCollector(c *ecobee.Client, metricPrefix string) *eCollector {
 		weatherTemperature: d.new(
 			"weather_temperature",
 			"temperature reported by weather forecast",
+			[]string{"thermostat_id", "thermostat_name"},
+		),
+
+		weatherAtmosphericPressure: d.new(
+			"weather_atmospheric_pressure_pascals",
+			"atmospheric pressure reported by weather forecast",
 			[]string{"thermostat_id", "thermostat_name"},
 		),
 	}
@@ -211,8 +217,14 @@ func (c *eCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		if len(t.Weather.Forecasts) > 0 {
+			forecast := t.Weather.Forecasts[0]
+
 			ch <- prometheus.MustNewConstMetric(
-				c.weatherTemperature, prometheus.GaugeValue, float64(t.Weather.Forecasts[0].Temperature)/10, tFields...,
+				c.weatherTemperature, prometheus.GaugeValue, float64(forecast.Temperature)/10, tFields...,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				c.weatherAtmosphericPressure, prometheus.GaugeValue, float64(forecast.Pressure)*100, tFields...,
 			)
 		}
 
